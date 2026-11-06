@@ -31,7 +31,7 @@ export class BotContacts {
   update(id, contact){const run=this.queue.then(async()=>{let rows={};try{rows=JSON.parse(await readFile(this.file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}if(contact)rows[id]={phone:contact.phone_number,updatedAt:new Date().toISOString()};else delete rows[id];await mkdir(dirname(this.file),{recursive:true});await writeFile(this.file+'.tmp',JSON.stringify(rows));await rename(this.file+'.tmp',this.file);});this.queue=run.catch(()=>{});return run;}
 }
 
-export function createBotHandler({appUrl,production=false,deposits,contacts,send,support='',agentContact='',getProfile=async user=>({name:user.first_name||'Player',points:0}),rename}) {
+export function createBotHandler({appUrl,production=false,deposits,contacts,send,support='',agentContact='',getProfile=async user=>({name:user.first_name||'Player',points:0}),rename,manualPayments=null}) {
   const url=new URL(appUrl);
   if(url.protocol!=='https:'||url.username||url.password)throw Error('MINI_APP_URL must be a public HTTPS URL without credentials.');
   const launch=screen=>{const link=new URL(url);link.searchParams.set('screen',screen==='withdraw'?'wallet':screen);if(screen==='withdraw')link.searchParams.set('tab','withdraw');return link.href;};
@@ -55,6 +55,11 @@ export function createBotHandler({appUrl,production=false,deposits,contacts,send
     }
     const text=String(message.text||'').trim();
     const command=text.split(/\s/)[0].split('@')[0].toLowerCase();
+    if(manualPayments&&command==='/deposit')return reply(pick('🏦 Manual Telebirr deposit\n\n1. Open your ETB wallet and choose an amount.\n2. Send once to the assigned number after checking the holder name.\n3. Submit your transaction reference.\n4. An administrator checks the actual receiving-account history.\n5. Your ETB wallet is credited once after confirmation.\n\nPasted SMS messages do not automatically verify payments.','🏦 በእጅ የሚረጋገጥ የቴሌብር ተቀማጭ\n\n1. የብር ቦርሳዎን ይክፈቱና መጠኑን ይምረጡ።\n2. የተቀባዩን ስም ካረጋገጡ በኋላ ለተመደበው ቁጥር አንድ ጊዜ ይላኩ።\n3. የግብይት ማጣቀሻውን ያስገቡ።\n4. አስተዳዳሪው ትክክለኛውን የገቢ ዝርዝር ያረጋግጣል።\n5. ከተረጋገጠ በኋላ ብሩ አንድ ጊዜ ወደ ቦርሳዎ ይጨመራል።'),button('Deposit | ተቀማጭ','wallet'));
+    if(manualPayments&&command==='/balance'){
+      const wallet=manualPayments.wallet(id);
+      return reply(pick('💰 Credited ETB balance: '+(wallet.balanceMinor/100).toFixed(2)+' ETB\n\nPending deposit requests: '+wallet.deposits.filter(d=>d.status==='pending').length+'\nGame spending and withdrawals from this wallet are not enabled yet.','💰 የተጨመረ ቀሪ ሂሳብ፦ '+(wallet.balanceMinor/100).toFixed(2)+' ብር\n\nከዚህ ቦርሳ ለጨዋታ መክፈል እና ገንዘብ ማውጣት ገና አልተገናኙም።'),button('Wallet | ቦርሳ','wallet'));
+    }
     const nameRequested=awaitingNames.get(id)>Date.now();
     if(awaitingNames.has(id)&&!nameRequested)awaitingNames.delete(id);
     if(command==='/cancel'){awaitingNames.delete(id);return reply(pick('Cancelled. Use /play to continue.','ተሰርዟል። ለመቀጠል /play ይጠቀሙ።'));}
@@ -87,14 +92,14 @@ export function createBotHandler({appUrl,production=false,deposits,contacts,send
   };
 }
 
-export async function startBot({token,appUrl,production,deposits,support,agentContact,getProfile,rename}){
+export async function startBot({token,appUrl,production,deposits,support,agentContact,getProfile,rename,manualPayments}){
   if(!token)throw Error('BOT_TOKEN is required when BOT_POLLING=true.');
   const send=async(method,payload)=>{
     let response;
     try{response=await fetch(`https://api.telegram.org/bot${token}/${method}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(35000)});}catch{throw Error('Telegram connection failed.');}
     const data=await response.json();if(!data.ok)throw Error('Telegram API request failed ('+response.status+').');return data.result;
   };
-  const handle=createBotHandler({appUrl,production,deposits,contacts:new BotContacts(),send,support,agentContact,getProfile,rename});
+  const handle=createBotHandler({appUrl,production,deposits,contacts:new BotContacts(),send,support,agentContact,getProfile,rename,manualPayments});
   const webhook=await send('getWebhookInfo',{});
   if(webhook.url)throw Error('This bot already uses a webhook. Choose one update method before enabling polling.');
   let offset=0;

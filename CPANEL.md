@@ -14,7 +14,7 @@ Clone or upload the repository into `/home/<account>/pu-bingo`. Include `app.cjs
 
 | Field | Value |
 | --- | --- |
-| Node.js version | 24.x, or 22.9+ |
+| Node.js version | 24.x, or 22.16+ |
 | Application mode | Production |
 | Application root | `pu-bingo` (relative to the hosting account home) |
 | Application URL | Your dedicated subdomain; leave the path blank |
@@ -36,7 +36,7 @@ Create/start the application. Open its HTTPS address and check the page and asse
 
 ## Scope and hosting checks
 
-Production runs free play only; all simulated wallet, stake, and withdrawal endpoints are disabled. Actual Telebirr payments remain unimplemented.
+Production runs free play only; all simulated wallet, stake, and withdrawal endpoints are disabled. Optional manual ETB deposits require the separate configuration below; paid game entry and real cash withdrawals remain unimplemented.
 
 Use a single application process. Room state is currently in memory, so multiple Passenger workers cannot share one round. Confirm with the hosting provider that the application can use one long-lived worker and that background timers continue between requests. Process restarts lose active rooms, and test stakes are refunded on recovery. This shared-hosting deployment does not make the app a production cash-game service.
 
@@ -66,3 +66,8 @@ To enable replies on cPanel:
 7. In a private chat with your bot, send `/start`, `/play`, and `/balance` to verify replies. Use `/change_username Your Name` to change the game display name. If replies fail, check cPanel's error log without sharing credentials.
 
 Production replies explain that real deposits and withdrawals are unavailable and launch free play. Development replies are explicitly simulated; they never treat pasted payment messages as verified transactions. The receiver validates `X-Telegram-Bot-Api-Secret-Token`, serializes updates, and suppresses duplicate successful updates within the current worker's recent-update cache. That cache resets on restart; it is not a durable exactly-once financial processing system.
+
+
+## Optional manual ETB deposit update
+
+See [MANUAL-DEPOSITS.md](MANUAL-DEPOSITS.md) for the five-step manual deposit workflow, private receiving-account configuration, verified Telegram administrator access, and SQLite backup instructions. It is disabled until configured. Test units are never converted to ETB. This deposit feature does not enable real-money game spending or cash withdrawals.

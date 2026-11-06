@@ -6,3 +6,7 @@ cloudflared*.exe
 .DS_Store
 Thumbs.db
 artifacts/
+manual-accounts.json
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

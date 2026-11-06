@@ -104,3 +104,8 @@ Withdrawals, deposits, purchases, prizes, and refunds share the serialized simul
 The home screen shows a single main **Join game** action, test balance, free practice, and three short playing steps. Friends rooms are under **Play with friends**. The wallet has **Deposit**, **Withdraw**, and **History** tabs. Administrator controls are on a separate screen opened through **Administrator** in the footer (or `?screen=admin`); the private key is still required.
 
 During card selection, use **Pick an available card** or find a cartela by number. A purchase bar shows the selected card and its price. Purchased cards remain green. The full 75-number board is collapsed until opened; it is hidden during selection. Countdown polling preserves form input when the game state has not changed. English and Amharic labels are provided for the main flow.
+
+
+## Optional manual ETB deposit update
+
+See [MANUAL-DEPOSITS.md](MANUAL-DEPOSITS.md) for the five-step manual deposit workflow, private receiving-account configuration, verified Telegram administrator access, and SQLite backup instructions. It is disabled until configured. Test units are never converted to ETB. This deposit feature does not enable real-money game spending or cash withdrawals.

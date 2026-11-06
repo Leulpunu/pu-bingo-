@@ -1,7 +1,7 @@
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>(n/100).toFixed(2);
-export function homeView(profile,wallet,simulation){return `
-<div class="greeting"><div><p>Welcome back</p><h2>${esc(profile.name)}</h2></div><button id="home-wallet" class="points">${simulation?'Test balance':'Play points'} <b>${simulation?money(wallet.balanceMinor):profile.points}</b></button></div>
+export function homeView(profile,wallet,simulation,manual=false){return `
+<div class="greeting"><div><p>Welcome back</p><h2>${esc(profile.name)}</h2></div><button id="home-wallet" class="points">${manual?'ETB balance':simulation?'Test balance':'Play points'} <b>${manual||simulation?money(wallet.balanceMinor):profile.points}</b></button></div>
 <section class="simple-hero"><span class="eyebrow">${simulation?'TEST GAME · NO REAL MONEY':'FREE BINGO'}</span><h1>Pick your cards.<br><em>We’ll call the numbers.</em></h1><p>Complete 2 lines on one cartela to win. Auto ON marks and claims for you.</p><button id="main-play" class="primary">${simulation?'Join game · 20 per card':'Play free bingo'}</button><button id="practice" class="secondary">Practice for free</button>${simulation&&wallet.balanceMinor<2000?'<p class="balance-hint">You need 20 test units per card. Add a test deposit in Wallet.</p>':''}</section>
 <div class="how-steps"><div><b>1</b><span>Choose a cartela</span></div><div><b>2</b><span>${simulation?'Buy for 20 test units':'Join for free'}</span></div><div><b>3</b><span>Complete 2 lines</span></div></div>
 <div class="section-title"><h2>Ready to play?</h2><button class="link" id="how">How to play ↗</button></div><p class="muted">${simulation?'Winner gets 80% of paid cards. House gets 20%. All balances are simulated.':'Free practice uses play points only.'}</p>

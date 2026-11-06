@@ -10,6 +10,15 @@ import { hasBingo, verifyTelegram } from './game.js';
 import { prepareRound, chooseCard, tickRound, RESULT_MS, winningCardId } from './rounds.js';
 const port=Number(process.env.PORT||3000), production=process.env.NODE_ENV==='production';
 if(production&&!process.env.BOT_TOKEN)throw Error('BOT_TOKEN is required in production');
+const manualAdminIds=new Set((process.env.MANUAL_ADMIN_IDS||'').split(',').map(s=>s.trim()).filter(Boolean));
+let manualPayments=null;
+if(process.env.MANUAL_DEPOSITS_ENABLED==='true'){
+ if(!manualAdminIds.size||[...manualAdminIds].some(id=>!/^\d{1,16}$/.test(id))||(process.env.MANUAL_ADMIN_KEY||'').length<32)throw Error('Configure MANUAL_ADMIN_IDS and a private MANUAL_ADMIN_KEY of at least 32 characters.');
+ const {ManualPayments,receivingAccounts}=await import('./manual-payments.js');
+ const rawAccounts=process.env.MANUAL_TELEBIRR_ACCOUNTS_FILE?await readFile(process.env.MANUAL_TELEBIRR_ACCOUNTS_FILE,'utf8'):process.env.MANUAL_TELEBIRR_ACCOUNTS;
+ manualPayments=new ManualPayments({accounts:receivingAccounts(rawAccounts)});
+}
+
 await testDeposits.recover();
 const sessions=new Map(), rooms=new Map();let profiles={};
 try{profiles=JSON.parse(await readFile('data/profiles.json','utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
@@ -37,11 +46,11 @@ const renameBotProfile=async(id,name)=>{profiles[id].name=name;for(const room of
 const webhook=process.env.BOT_WEBHOOK_SECRET?new TelegramWebhook(process.env.BOT_WEBHOOK_SECRET,createBotHandler({
  appUrl:process.env.MINI_APP_URL,production,deposits:testDeposits,contacts:new BotContacts(),send:telegramClient(process.env.BOT_TOKEN),support:process.env.SUPPORT_CONTACT||'',agentContact:process.env.AGENT_CONTACT||'',
  getProfile:getBotProfile,
- rename:renameBotProfile
+ rename:renameBotProfile,manualPayments
 })):null;
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png'};
 const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://localhost');const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};try{
-if(!url.pathname.startsWith('/api/')){const files={'/':'index.html','/pu-bingo-avatar.png':'pu-bingo-avatar.png','/app.js':'app.js','/language.js':'language.js','/voice.js':'voice.js','/player-views.js':'player-views.js','/withdrawals.js':'withdrawals.js','/bingo-rules.js':'bingo-rules.js','/style.css':'style.css'};const file=files[url.pathname];if(!file){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':types['.'+file.split('.').pop()],'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});return res.end(await readFile(new URL('./public/'+file,import.meta.url)));}
+if(!url.pathname.startsWith('/api/')){const files={'/':'index.html','/pu-bingo-avatar.png':'pu-bingo-avatar.png','/app.js':'app.js','/language.js':'language.js','/voice.js':'voice.js','/manual-wallet.js':'manual-wallet.js','/player-views.js':'player-views.js','/withdrawals.js':'withdrawals.js','/bingo-rules.js':'bingo-rules.js','/style.css':'style.css'};const file=files[url.pathname];if(!file){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':types['.'+file.split('.').pop()],'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});return res.end(await readFile(new URL('./public/'+file,import.meta.url)));}
 let body={};if(req.method==='POST'){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>16000)return send(413,{error:'Request too large'});}try{body=JSON.parse(raw||'{}');}catch{return send(400,{error:'Invalid JSON'});}}
 if(url.pathname==='/api/telegram/webhook'){
  if(req.method==='GET')return send(200,{enabled:!!webhook});
@@ -49,8 +58,27 @@ if(url.pathname==='/api/telegram/webhook'){
  if(!webhook)return send(503,{error:'Webhook is not configured.'});
  try{return send(200,await webhook.deliver(req.headers['x-telegram-bot-api-secret-token'],body));}catch(e){return send(e.status||503,{error:e.status?e.message:'Telegram update could not be handled. Please retry.'});}
 }
-if(url.pathname==='/api/auth'&&req.method==='POST'){let user;if(body.initData){try{user=verifyTelegram(body.initData,process.env.BOT_TOKEN||'');}catch(e){return send(401,{error:e.message});}}else if(!production){user={id:'guest-'+(typeof body.guest==='string'&&/^[a-f0-9-]{36}$/.test(body.guest)?body.guest:randomUUID()),first_name:'Guest'};}else return send(401,{error:'Please open PU Bingo inside Telegram.'});const id=String(user.id);profiles[id]??={id,name:String(user.first_name||'Player').slice(0,40),points:0,wins:0,played:0};const token=randomBytes(32).toString('hex');sessions.set(token,{id,expires:Date.now()+3600_000});return send(200,{token,profile:profiles[id],demo:!body.initData,simulation:!production,botUsername:process.env.BOT_USERNAME||''});}
+if(url.pathname==='/api/auth'&&req.method==='POST'){let user;if(body.initData){try{user=verifyTelegram(body.initData,process.env.BOT_TOKEN||'');}catch(e){return send(401,{error:e.message});}}else if(!production){user={id:'guest-'+(typeof body.guest==='string'&&/^[a-f0-9-]{36}$/.test(body.guest)?body.guest:randomUUID()),first_name:'Guest'};}else return send(401,{error:'Please open PU Bingo inside Telegram.'});const id=String(user.id);profiles[id]??={id,name:String(user.first_name||'Player').slice(0,40),points:0,wins:0,played:0};const token=randomBytes(32).toString('hex');sessions.set(token,{id,verified:!!body.initData,expires:Date.now()+3600_000});return send(200,{token,profile:profiles[id],demo:!body.initData,simulation:!production,manualDeposits:!!manualPayments&&!!body.initData,manualAdmin:!!body.initData&&manualAdminIds.has(id),botUsername:process.env.BOT_USERNAME||''});}
 const session=sessions.get(req.headers.authorization?.replace('Bearer ',''));if(!session||session.expires<Date.now())return send(401,{error:'Session expired. Reload to sign in.'});const id=session.id,profile=profiles[id];
+
+if(url.pathname.startsWith('/api/manual/')){
+ if(!manualPayments)return send(403,{error:'Manual deposits are not enabled.'});
+ if(!session.verified)return send(403,{error:'Open inside Telegram with your verified account to use the ETB wallet.'});
+ const adminRoute=url.pathname.startsWith('/api/manual/admin/');
+ if(adminRoute){const expected=process.env.MANUAL_ADMIN_KEY||'',provided=String(req.headers['x-manual-admin-key']||'');if(!manualAdminIds.has(id)||Buffer.byteLength(provided)!==Buffer.byteLength(expected)||!timingSafeEqual(Buffer.from(provided),Buffer.from(expected)))return send(403,{error:'Manual payment administrator access denied.'});}
+ try{
+  if(url.pathname==='/api/manual/wallet'&&req.method==='GET')return send(200,manualPayments.wallet(id));
+  if(url.pathname==='/api/manual/deposits'&&req.method==='POST')return send(201,manualPayments.create(id,body.amount,body.requestKey));
+  if(url.pathname==='/api/manual/admin/deposits'&&req.method==='GET')return send(200,manualPayments.pending());
+  const action=url.pathname.match(/^\/api\/manual\/(admin\/)?deposits\/([a-f0-9-]{36})\/(reference|cancel|review)$/);
+  if(action&&req.method==='POST'){
+   if(action[1]&&action[3]==='review')return send(200,manualPayments.review(id,action[2],body.decision,body.proof||{}));
+   if(!action[1]&&action[3]==='reference')return send(200,manualPayments.submitReference(id,action[2],body.reference));
+   if(!action[1]&&action[3]==='cancel')return send(200,manualPayments.cancel(id,action[2]));
+  }
+  return send(404,{error:'Not found.'});
+ }catch(e){if(e.code?.startsWith('ERR_SQLITE'))return send(503,{error:'Payment database is unavailable. Please retry.'});return send(409,{error:e.message});}
+}
 
 if(url.pathname.startsWith('/api/test-')){
  if(production)return send(403,{error:'Deposit simulation is disabled in production.'});
@@ -85,6 +113,6 @@ send(404,{error:'Not found'});
 server.listen(port,()=>console.log(`PU Bingo running at http://localhost:${server.address().port}`));
 
 if(process.env.BOT_POLLING==='true'){
- try{await startBot({token:process.env.BOT_TOKEN,appUrl:process.env.MINI_APP_URL,production,deposits:testDeposits,support:process.env.SUPPORT_CONTACT||'',agentContact:process.env.AGENT_CONTACT||'',getProfile:getBotProfile,rename:renameBotProfile});console.log('Telegram bot polling started.');}
+ try{await startBot({token:process.env.BOT_TOKEN,appUrl:process.env.MINI_APP_URL,production,deposits:testDeposits,support:process.env.SUPPORT_CONTACT||'',agentContact:process.env.AGENT_CONTACT||'',getProfile:getBotProfile,rename:renameBotProfile,manualPayments});console.log('Telegram bot polling started.');}
  catch(e){console.error('Bot startup failed: '+e.message);server.close();process.exitCode=1;}
 }

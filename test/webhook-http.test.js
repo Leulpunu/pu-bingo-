@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 test('hosted webhook is reachable without a player session but requires its own secret',{timeout:10000},async()=>{
  const dir=await mkdtemp(join(tmpdir(),'pu-hook-http-')),secret='webhook_test_secret_01234567890123456789';let child;
  try{
-  child=spawn(process.execPath,[fileURLToPath(new URL('../server.js',import.meta.url))],{cwd:dir,env:{...process.env,PORT:'0',BOT_POLLING:'false',NODE_ENV:'production',BOT_TOKEN:'test-token',MINI_APP_URL:'https://example.com',BOT_WEBHOOK_SECRET:secret},stdio:['ignore','pipe','pipe']});
+  child=spawn(process.execPath,[fileURLToPath(new URL('../server.js',import.meta.url))],{cwd:dir,env:{...process.env,PORT:'0',MANUAL_DEPOSITS_ENABLED:'false',BOT_POLLING:'false',NODE_ENV:'production',BOT_TOKEN:'test-token',MINI_APP_URL:'https://example.com',BOT_WEBHOOK_SECRET:secret},stdio:['ignore','pipe','pipe']});
   const [output]=await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw Error('Server startup failed');})]);
   const base=String(output).match(/http:\/\/localhost:\d+/)[0];
   const readiness=await fetch(base+'/api/telegram/webhook');assert.equal((await readiness.json()).enabled,true);

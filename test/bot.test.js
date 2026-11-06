@@ -45,3 +45,9 @@ test('balance reply separates reserved funds and affordable cartelas',async()=>{
  await handle({message:{chat:{id:7,type:'private'},from:{id:7},text:'/balance'}});
  assert.match(sent[0].text,/Available: 75.00/);assert.match(sent[0].text,/Reserved: 25.00/);assert.match(sent[0].text,/Cards you can buy: 3/);assert.ok(sent[0].reply_markup.inline_keyboard);
 });
+test('manual deposit mode gives the five review steps and a separate ETB balance',async()=>{
+ const sent=[];const handle=createBotHandler({appUrl:'https://example.com',production:true,deposits:{},contacts:{},send:async(_,body)=>sent.push(body),manualPayments:{wallet:()=>({balanceMinor:12345,deposits:[{status:'pending'}]})}});
+ const message=text=>handle({message:{chat:{id:7,type:'private'},from:{id:7},text}});
+ await message('/deposit');assert.match(sent.at(-1).text,/assigned number/);assert.match(sent.at(-1).text,/administrator checks/i);assert.match(sent.at(-1).text,/credited once/);
+ await message('/balance');assert.match(sent.at(-1).text,/123.45 ETB/);assert.match(sent.at(-1).text,/not enabled yet/);
+});
