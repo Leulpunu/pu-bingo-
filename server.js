@@ -1,5 +1,6 @@
 import http from 'node:http';
-import { startBot } from './bot.js';
+import { startBot, createBotHandler, BotContacts, telegramClient } from './bot.js';
+import { TelegramWebhook } from './telegram-webhook.js';
 import { timingSafeEqual } from 'node:crypto';
 import { TestDeposits, balance, prizeSplit, STAKE_MINOR } from './deposits.js';
 const testDeposits = new TestDeposits();
@@ -30,10 +31,24 @@ setInterval(async()=>{if(ticking)return;ticking=true;try{const now=Date.now();fo
  }catch(e){console.error('Round update failed',e);}finally{room.busy=false;}
  }for(const [k,v]of sessions)if(v.expires<now)sessions.delete(k);
  }finally{ticking=false;}},500).unref();
+if(process.env.BOT_POLLING==='true'&&process.env.BOT_WEBHOOK_SECRET)throw Error('Use either polling or a webhook, not both.');
+const getBotProfile=async user=>{const id=String(user.id);if(!profiles[id]){profiles[id]={id,name:String(user.first_name||'Player').slice(0,40),points:0,wins:0,played:0};persist();}return profiles[id];};
+const renameBotProfile=async(id,name)=>{profiles[id].name=name;for(const room of rooms.values()){const player=room.players.get(id);if(player)player.name=name;}persist();await saving;};
+const webhook=process.env.BOT_WEBHOOK_SECRET?new TelegramWebhook(process.env.BOT_WEBHOOK_SECRET,createBotHandler({
+ appUrl:process.env.MINI_APP_URL,production,deposits:testDeposits,contacts:new BotContacts(),send:telegramClient(process.env.BOT_TOKEN),support:process.env.SUPPORT_CONTACT||'',agentContact:process.env.AGENT_CONTACT||'',
+ getProfile:getBotProfile,
+ rename:renameBotProfile
+})):null;
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png'};
 const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://localhost');const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};try{
 if(!url.pathname.startsWith('/api/')){const files={'/':'index.html','/pu-bingo-avatar.png':'pu-bingo-avatar.png','/app.js':'app.js','/language.js':'language.js','/voice.js':'voice.js','/player-views.js':'player-views.js','/withdrawals.js':'withdrawals.js','/bingo-rules.js':'bingo-rules.js','/style.css':'style.css'};const file=files[url.pathname];if(!file){res.writeHead(404);return res.end('Not found');}res.writeHead(200,{'Content-Type':types['.'+file.split('.').pop()],'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});return res.end(await readFile(new URL('./public/'+file,import.meta.url)));}
 let body={};if(req.method==='POST'){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>16000)return send(413,{error:'Request too large'});}try{body=JSON.parse(raw||'{}');}catch{return send(400,{error:'Invalid JSON'});}}
+if(url.pathname==='/api/telegram/webhook'){
+ if(req.method==='GET')return send(200,{enabled:!!webhook});
+ if(req.method!=='POST')return send(405,{error:'Method not allowed.'});
+ if(!webhook)return send(503,{error:'Webhook is not configured.'});
+ try{return send(200,await webhook.deliver(req.headers['x-telegram-bot-api-secret-token'],body));}catch(e){return send(e.status||503,{error:e.status?e.message:'Telegram update could not be handled. Please retry.'});}
+}
 if(url.pathname==='/api/auth'&&req.method==='POST'){let user;if(body.initData){try{user=verifyTelegram(body.initData,process.env.BOT_TOKEN||'');}catch(e){return send(401,{error:e.message});}}else if(!production){user={id:'guest-'+(typeof body.guest==='string'&&/^[a-f0-9-]{36}$/.test(body.guest)?body.guest:randomUUID()),first_name:'Guest'};}else return send(401,{error:'Please open PU Bingo inside Telegram.'});const id=String(user.id);profiles[id]??={id,name:String(user.first_name||'Player').slice(0,40),points:0,wins:0,played:0};const token=randomBytes(32).toString('hex');sessions.set(token,{id,expires:Date.now()+3600_000});return send(200,{token,profile:profiles[id],demo:!body.initData,simulation:!production,botUsername:process.env.BOT_USERNAME||''});}
 const session=sessions.get(req.headers.authorization?.replace('Bearer ',''));if(!session||session.expires<Date.now())return send(401,{error:'Session expired. Reload to sign in.'});const id=session.id,profile=profiles[id];
 
@@ -70,6 +85,6 @@ send(404,{error:'Not found'});
 server.listen(port,()=>console.log(`PU Bingo running at http://localhost:${server.address().port}`));
 
 if(process.env.BOT_POLLING==='true'){
- try{await startBot({token:process.env.BOT_TOKEN,appUrl:process.env.MINI_APP_URL,production,deposits:testDeposits,support:process.env.SUPPORT_CONTACT||''});console.log('Telegram bot polling started.');}
+ try{await startBot({token:process.env.BOT_TOKEN,appUrl:process.env.MINI_APP_URL,production,deposits:testDeposits,support:process.env.SUPPORT_CONTACT||'',agentContact:process.env.AGENT_CONTACT||'',getProfile:getBotProfile,rename:renameBotProfile});console.log('Telegram bot polling started.');}
  catch(e){console.error('Bot startup failed: '+e.message);server.close();process.exitCode=1;}
 }

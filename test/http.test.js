@@ -11,7 +11,7 @@ import { randomBytes, randomUUID, createHmac } from 'node:crypto';
 test('HTTP: deposits, paid entry, automatic start, single-player refund, restart recovery, production lock', {timeout:60000}, async()=>{
  const dir=await mkdtemp(join(tmpdir(),'pu-http-')),key=randomBytes(32).toString('hex');let child,base;
  async function start(production=false){
-  child=spawn(process.execPath,[fileURLToPath(new URL('../server.js',import.meta.url))],{cwd:dir,env:{...process.env,PORT:'0',BOT_POLLING:'false',TEST_ADMIN_KEY:key,NODE_ENV:production?'production':'development',BOT_TOKEN:'test-token'},stdio:['ignore','pipe','pipe']});
+  child=spawn(process.execPath,[fileURLToPath(new URL('../server.js',import.meta.url))],{cwd:dir,env:{...process.env,PORT:'0',BOT_POLLING:'false',BOT_WEBHOOK_SECRET:'',TEST_ADMIN_KEY:key,NODE_ENV:production?'production':'development',BOT_TOKEN:'test-token'},stdio:['ignore','pipe','pipe']});
   const output=await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw Error('Server startup failed');})]);
   base=String(output[0]).trim().match(/http:\/\/localhost:\d+/)[0]+'/api/';
  }

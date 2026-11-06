@@ -43,3 +43,26 @@ Use a single application process. Room state is currently in memory, so multiple
 Leave bot polling disabled unless the provider explicitly supports one continuously running poller. The Mini App can launch through BotFather's configured menu without bot-chat polling. Persistent profiles require the application account to have write access to `data/`. Never make this directory public or world-writable.
 
 If deployment fails, inspect the application's Passenger/stderr log and report the error without environment secrets. Actual cPanel/Passenger compatibility must be verified on your host.
+
+## Bot-chat menu and webhook
+
+The command menu provides `/play`, `/balance`, `/deposit`, `/withdraw`, `/change_username`, `/agent`, and `/support`, plus rules, privacy, help, and phone removal. `/change_username` changes the game display name only. `/agent` provides an operator-configured contact; no agent commission or registration system is implemented.
+
+To enable replies on cPanel:
+
+1. Upload the updated source, including `telegram-webhook.js`, `bot.js`, `server.js`, `public/app.js`, and `scripts/configure-telegram.mjs`. Preserve the private environment and existing `data/`.
+2. Keep `BOT_POLLING=false`. Set `MINI_APP_URL=https://bingo.nilestockmgmt.com`.
+3. Add a private `BOT_WEBHOOK_SECRET` of 32–256 letters, digits, hyphens or underscores in cPanel. To generate a random value privately in your own terminal, run `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Do not send this secret in chat or commit it.
+4. Set `SUPPORT_CONTACT` to your own support contact. Optionally set `AGENT_CONTACT` for agent enquiries.
+5. Save and restart the application. `https://bingo.nilestockmgmt.com/api/telegram/webhook` should return `{"enabled":true}`. This page does not expose the secret.
+6. On your local computer, privately set the same `BOT_WEBHOOK_SECRET`, permanent `MINI_APP_URL`, current `BOT_TOKEN`, and `BOT_USERNAME` in `.env`. Keep polling false. Then run:
+
+   ```text
+   node --env-file=.env scripts/configure-telegram.mjs --webhook
+   ```
+
+   This checks server readiness, publishes the command menu, and registers Telegram's webhook with its secret header. It does not send a chat message or transfer money. The menu button lists commands; `/play` supplies the Mini App launch button. BotFather's Main App remains available.
+
+7. In a private chat with your bot, send `/start`, `/play`, and `/balance` to verify replies. Use `/change_username Your Name` to change the game display name. If replies fail, check cPanel's error log without sharing credentials.
+
+Production replies explain that real deposits and withdrawals are unavailable and launch free play. Development replies are explicitly simulated; they never treat pasted payment messages as verified transactions. The receiver validates `X-Telegram-Bot-Api-Secret-Token`, serializes updates, and suppresses duplicate successful updates within the current worker's recent-update cache. That cache resets on restart; it is not a durable exactly-once financial processing system.
